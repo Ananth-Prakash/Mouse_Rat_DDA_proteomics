@@ -30,8 +30,6 @@ PXDID <- "PXD016958"
 
 tmp  <- read.table(file = paste(PXDID, "/proteinGroups_ppb_final-tissue_names_", PXDID, ".txt", sep=""), quote = "\"", header = TRUE, sep = "\t", stringsAsFactors = FALSE, comment.char = "#")
 
-#tmp  <- read.table(file = "/Users/ananth/Documents/MaxQuant_Bechmarking/Rat/PXD016958/proteinGroups_ppb_final-tissue_names_PXD016958_forbinning.txt", quote = "\"", header = TRUE, sep = "\t", stringsAsFactors = FALSE, comment.char = "#")
-
 
 #Some of the gene entries (ex. IGHA2 has two Ensembl gene ids ENSG00000211890 & ENSG00000276173
 #                          ex. IGHV2-70 has two Ensembl gene ids ENSG00000274576 & ENSG00000282453)
@@ -268,51 +266,8 @@ ggplot(pca_plot_data, aes(x=PC1, y = PC2, colour = Datasets))+
   theme(legend.position = "bottom")+
   theme(legend.key.size = unit(0.3,"line"))+
   guides(col = guide_legend(ncol = 3))+
-  ggtitle("Rat-Samples bin_values_batch-per-dataset-regions\n[filter: genes detected in at least 50% of samples]\n[number of genes: 1753]")
+  ggtitle("Rat-Samples bin_values_batch-per-dataset-regions\n[filter: genes detected in at least 50% of samples]")
 
 # IMPORTANT reset key
 GeomText$draw_key <- oldK
 
-
-
-
-
-
-
-
-######## Bin matrix Plot
-filtered_data <- filtered_data[1:100, 1:(ncol(filtered_data)-1)]
-data_long <- gather(filtered_data, Samples, Bins, colnames(filtered_data)[2]:colnames(filtered_data)[ncol(filtered_data)], factor_key=TRUE)
-
-ggplot(data_long, aes(Samples, Gene)) + 
-  geom_tile(aes(fill= Bins), colour="white") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
-  ggtitle("Brain-Samples_binned-by-regions\n[filter: genes detected in at least 50% of all samples]")+
-  #scale_fill_viridis(discrete=FALSE) +
-  coord_flip()+geom_text(aes(label=Bins), colour="white", size=3)
-
-
-## Heatmap (code from David)
-par(mar=c(5,5,2,2),xaxs = "i",yaxs = "i",cex.axis=0.4,cex.lab=10)
-cordata <- merged_data
-cordata[is.na(cordata)] <- 1
-my_group1 <- as.numeric(as.factor(gsub("\\..*", "", colnames(merged_data[,-c(1)]), perl=TRUE)))
-my_group2 <- as.numeric(as.factor(gsub(".*\\.", "", colnames(merged_data[,-c(1)]), perl=TRUE)))
-Datasets <- rainbow(4)[my_group1]
-Tissues <- rainbow(15)[my_group2]
-colSide <- cbind(Datasets, Tissues)
-colMain <- colorRampPalette(brewer.pal(9, "Blues"))(10)
-cor_results <- cor(cordata[,-c(1)])
-ColSideAnn<-data.frame(Datasets=my_group1,Tissues=my_group2,stringsAsFactors=TRUE)
-heatmap3(cor_results, 
-         RowSideColors=colSide,
-         ColSideColors=colSide,
-         col=colMain,
-         labRow = FALSE,
-         labCol = FALSE,
-         ColSideAnn=ColSideAnn,
-         ColSideWidth = 10)
-legend("right", title="Tissues", legend =levels(as.factor(annot_osw$Disease)),pch=16, pt.cex=1.5, cex=0.75, bty='n',
-       col =brewer.pal(9, "Set1")[seq_along(levels(as.factor(annot_osw$Disease)))])
-legend("bottomright", title="Type", legend =levels(as.factor(annot_osw$Condition)),pch=16, pt.cex=1.5, cex=0.75, bty='n',
-       col =brewer.pal(9, "Set1")[seq_along(levels(as.factor(annot_osw$Condition)))])
