@@ -1,0 +1,154 @@
+---
+title: "GO analysis"
+output: html_notebook
+---
+
+
+#Load libraries, DB and the main table
+
+```{r}
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+
+#BiocManager::install("clusterProfiler")
+
+library(clusterProfiler)
+
+BiocManager::install("org.Rn.eg.db")
+library(org.Rn.eg.db)
+
+
+
+proteinGroups_table <- read.table("/Users/ananth/Documents/MaxQuant_Bechmarking/Rat/Gene_distribution_in_organs-GeneNames-Median_bin_values-RAT.txt",
+                                  header = TRUE,
+                                  stringsAsFactors = FALSE)
+#proteinGroups_table <- proteinGroups_table[,-c(35,36,37,38)]
+```
+
+
+The proteinGroups_table is a bin intensity matrix by organ
+
+The following script  perform a median normalization across samples
+
+
+```{r}
+proteinGroups_table_tmp <- proteinGroups_table[,c(-1,-2)]
+median_values <- apply(proteinGroups_table_tmp, 1, function(x) median(na.omit(x)))
+proteinGroups_norm <- proteinGroups_table_tmp/median_values
+proteinGroups_norm[is.na(proteinGroups_norm)] <- 0
+proteinGroups_norm <- cbind(proteinGroups_table[,c(1,2)], proteinGroups_norm)
+#rm(median_values, proteinGroups_table_tmp)
+proteinGroups_mean <- apply(proteinGroups_norm[, -c(1,2)], 1, mean)
+
+```
+
+Each gene-tissue is classified in one of 3 categories: 
+   - "Tissue enriched" at least 10-fold higher intesnity compared to average value and must be unique high value.
+   - "Group enriched" at least 10-fold higher intesnity compared to average value in a group of 2-4 tissues compared to al other tissues
+   - "Mixed" when not fulfil any of the above categories (they are discarded)
+
+```{r}
+Elevated_genes <- data.frame(
+  "Gene ID" = NA,
+  "Tissue" = NA,
+  "Gene name" = NA,
+  "Category" = NA
+)
+
+for (i in seq(dim(proteinGroups_norm)[1])){
+  get_sign_values <- which(proteinGroups_norm[ i, c(-1,-2)] > proteinGroups_mean[i]*2)
+  if (length(get_sign_values)>0){
+    if (length(get_sign_values)==1){
+      Gene_ID <- proteinGroups_norm$GeneID[i]
+      Gene_name <- proteinGroups_norm$GeneName[i]
+      Tissue <- names(proteinGroups_norm)[2+get_sign_values[1]]
+      Category <- "Tissue enriched"
+      new_row <- c(Gene_ID, Tissue, Gene_name, Category)
+      Elevated_genes <- rbind(Elevated_genes, new_row)
+    }
+    else(
+      if(length(get_sign_values)<5){
+        for (j in seq(get_sign_values)){
+          Gene_ID <- proteinGroups_norm$GeneID[i]
+          Gene_name <- proteinGroups_norm$GeneName[i]
+          Tissue <- names(proteinGroups_norm)[2+get_sign_values[j]]
+          Category <- "Group enriched"
+          new_row <- c(Gene_ID, Tissue, Gene_name, Category)
+          Elevated_genes <- rbind(Elevated_genes, new_row)
+        }
+      }
+    )
+    
+    
+  }
+  
+}
+Elevated_genes <- Elevated_genes[-1,]
+```
+
+GO over-representation test 
+```{r}
+get_GoTerm <- function(x) {
+tissue<-x
+genes <- Elevated_genes[Elevated_genes$Tissue==tissue,]$Gene.ID
+total_genes <- proteinGroups_norm$GeneID[proteinGroups_norm[tissue]>=0]
+totalgene.df <- bitr(total_genes, fromType = "ENSEMBL",
+        toType = c("ENTREZID", "SYMBOL"),
+        OrgDb = org.Rn.eg.db)
+entrezid_total <- totalgene.df$ENTREZID
+gene.df <- bitr(genes, fromType = "ENSEMBL",
+        toType = c("ENTREZID", "SYMBOL"),
+        OrgDb = org.Rn.eg.db)
+entrezid <- gene.df$ENTREZID
+ego <-NULL
+ego <- enrichGO(gene          = entrezid,
+                universe      = entrezid_total,
+                OrgDb         = org.Rn.eg.db,
+                ont           = "BP",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.05,
+        readable      = TRUE)
+ego_simplified <- simplify(ego)
+return(ego_simplified@result)}
+
+
+```
+
+```{r}
+results <- data.frame()
+for (i in unique(Elevated_genes$Tissue)){
+  tmp_get_go_term <- get_GoTerm(i)
+  if (dim(tmp_get_go_term)[1]!=0){
+  tmp <- cbind(tmp_get_go_term, i)
+  results <- rbind(results, tmp)}
+  
+}
+```
+
+#Group analysis
+```{r}
+total_prot <- apply(apply(proteinGroups_table_tmp, 2, is.na), 2, function(x) dim(proteinGroups_table)[1] - sum(x))
+total_prot_mat <- as.matrix(t(total_prot))
+
+Group_enrich <- c()
+Tissue_enrich <- c()
+for (i in seq(names(total_prot))){
+  Group_enrich[i] <- length(which(Elevated_genes$Tissue==names(total_prot)[i] & Elevated_genes$Category=="Group enriched"))
+  Tissue_enrich[i] <- length(which(Elevated_genes$Tissue==names(total_prot)[i] & Elevated_genes$Category=="Tissue enriched"))
+}
+total_prot_mat<-rbind(total_prot_mat, Group_enrich)
+total_prot_mat<-rbind(total_prot_mat, Tissue_enrich)
+
+
+rownames(total_prot_mat) <- c("Group mixed", "Group enriched", "Organ enriched")
+##Analysis of Group tissue specific
+sort(total_prot_mat[2,]*100/total_prot_mat[1,])
+sort(total_prot_mat[3,]*100/total_prot_mat[1,])
+
+total_prot_mat[1,] <- total_prot_mat[1,] - total_prot_mat[2,] - total_prot_mat[3,]
+colnames(total_prot_mat) <- c("Brain", "Heart", "Kidney", "Liver", "Lung", "Spinal Cord", "Tendon", "Testis")
+par(mar=c(4,7,4,4))
+barplot(total_prot_mat, horiz = TRUE, las = 1, cex.names =  0.7, cex.axis = 0.8,col = c("darkblue", "darkred", "yellow"), legend = TRUE, args.legend = list(cex=.7, xjust=0.6), xlab = "Number of mapped genes")
+
+```
